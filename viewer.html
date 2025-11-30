@@ -296,10 +296,11 @@
             height: 100vh;
         }
 
-        iframe {
+        #pdfViewer {
             width: 100%;
             height: 100%;
             border: none;
+            display: block;
         }
 
         .loading {
@@ -477,7 +478,7 @@
         <div class="add-bookmark-section">
             <input type="text" class="add-bookmark-input" id="bookmarkNote" placeholder="Add a note (optional)...">
             <button class="add-bookmark-btn" onclick="addBookmark()">
-                ➕ Add Bookmark
+                ➕ Add Bookmark (Current Page: <span id="currentPageForBookmark">1</span>)
             </button>
         </div>
     </div>
@@ -504,9 +505,11 @@
         const bookName = decodeURIComponent(urlParams.get('name'));
         
         let currentPage = 1;
+        let totalPages = 0;
         let isFullscreen = false;
         let bookmarksOpen = false;
         let controlsTimeout;
+        let pageCheckInterval;
 
         document.getElementById('bookTitle').textContent = bookName.replace('.pdf', '');
 
@@ -653,10 +656,10 @@
             
             // Show feedback
             const btn = document.querySelector('.add-bookmark-btn');
-            const originalText = btn.textContent;
-            btn.textContent = '✓ Added!';
+            const originalHTML = btn.innerHTML;
+            btn.innerHTML = '✓ Bookmark Added!';
             setTimeout(() => {
-                btn.textContent = originalText;
+                btn.innerHTML = originalHTML;
             }, 1500);
         }
 
@@ -668,17 +671,10 @@
         }
 
         function goToBookmark(page) {
-            try {
-                const iframe = document.getElementById('pdfFrame');
-                if (iframe && iframe.contentWindow) {
-                    iframe.contentWindow.location.hash = `page=${page}`;
-                    currentPage = page;
-                    updateProgress(page);
-                    document.getElementById('pageIndicator').textContent = `Page ${page}`;
-                }
-            } catch (e) {
-                console.log('Unable to navigate due to cross-origin restrictions');
-            }
+            const url = `https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodeURIComponent(pdfUrl)}#page=${page}`;
+            document.getElementById('pdfViewer').src = url;
+            currentPage = page;
+            updateProgress(page);
         }
 
         // Load PDF
@@ -692,36 +688,18 @@
                 if (savedProgress) {
                     const progress = JSON.parse(savedProgress);
                     savedPage = progress.page || 1;
+                    totalPages = progress.total || 0;
                 }
                 
                 currentPage = savedPage;
+                updatePageDisplay();
 
                 const viewerUrl = `https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodeURIComponent(pdfUrl)}#page=${savedPage}`;
                 
-                container.innerHTML = `<iframe src="${viewerUrl}" id="pdfFrame"></iframe>`;
+                container.innerHTML = `<iframe src="${viewerUrl}" id="pdfViewer"></iframe>`;
                 
-                const iframe = document.getElementById('pdfFrame');
-                
-                iframe.onload = function() {
-                    setInterval(() => {
-                        try {
-                            const iframeWindow = iframe.contentWindow;
-                            if (iframeWindow && iframeWindow.location) {
-                                const hash = iframeWindow.location.hash;
-                                const match = hash.match(/page=(\d+)/);
-                                if (match) {
-                                    const newPage = parseInt(match[1]);
-                                    if (newPage !== currentPage) {
-                                        currentPage = newPage;
-                                        updateProgress(currentPage);
-                                    }
-                                }
-                            }
-                        } catch (e) {
-                            // Cross-origin restriction
-                        }
-                    }, 2000);
-                };
+                // Start checking for page changes
+                startPageTracking();
 
             } catch (error) {
                 console.error('Error loading PDF:', error);
@@ -735,42 +713,126 @@
             }
         }
 
+        function startPageTracking() {
+            // Clear any existing interval
+            if (pageCheckInterval) {
+                clearInterval(pageCheckInterval);
+            }
+
+            // Check page changes every 2 seconds
+            pageCheckInterval = setInterval(() => {
+                try {
+                    const iframe = document.getElementById('pdfViewer');
+                    if (iframe && iframe.contentWindow) {
+                        const iframeLocation = iframe.contentWindow.location.href;
+                        const pageMatch = iframeLocation.match(/[#&]page=(\d+)/);
+                        
+                        if (pageMatch) {
+                            const newPage = parseInt(pageMatch[1]);
+                            if (newPage !== currentPage && newPage > 0) {
+                                currentPage = newPage;
+                                updateProgress(currentPage);
+                            }
+                        }
+                    }
+                } catch (e) {
+                    // Cross-origin restriction - fallback method
+                    // We'll rely on manual tracking via hash changes
+                }
+            }, 2000);
+
+            // Alternative: Listen for hash changes
+            window.addEventListener('hashchange', function() {
+                const pageMatch = window.location.hash.match(/page=(\d+)/);
+                if (pageMatch) {
+                    currentPage = parseInt(pageMatch[1]);
+                    updateProgress(currentPage);
+                }
+            });
+        }
+
         function updateProgress(page) {
+            // Get total pages from PDF.js if possible
+            if (totalPages === 0) {
+                // Estimate or set a reasonable number
+                totalPages = page; // Will grow as user navigates
+            } else if (page > totalPages) {
+                totalPages = page;
+            }
+
+            const percentage = totalPages > 0 ? Math.round((page / totalPages) * 100) : 0;
+            
             const progress = {
                 page: page,
-                total: 0,
-                percentage: 0,
+                total: totalPages,
+                percentage: percentage,
                 lastRead: new Date().toISOString()
             };
             
             localStorage.setItem(`book_${bookName}`, JSON.stringify(progress));
-            document.getElementById('pageIndicator').textContent = `Page ${page}`;
+            updatePageDisplay();
+        }
+
+        function updatePageDisplay() {
+            const pageText = totalPages > 0 ? `Page ${currentPage} of ${totalPages}` : `Page ${currentPage}`;
+            document.getElementById('pageIndicator').textContent = pageText;
+            document.getElementById('currentPageForBookmark').textContent = currentPage;
         }
 
         // Save progress before leaving
         window.addEventListener('beforeunload', () => {
-            try {
-                const iframe = document.getElementById('pdfFrame');
-                if (iframe && iframe.contentWindow) {
-                    const hash = iframe.contentWindow.location.hash;
-                    const match = hash.match(/page=(\d+)/);
-                    if (match) {
-                        updateProgress(parseInt(match[1]));
-                    }
-                }
-            } catch (e) {
-                // Cross-origin restriction
-            }
+            updateProgress(currentPage);
         });
 
-        // Keyboard shortcuts
+        // Manual page tracking - User can press keys to update
         document.addEventListener('keydown', (e) => {
             if (e.key === 'f' || e.key === 'F') {
+                e.preventDefault();
                 toggleFullscreen();
             } else if (e.key === 'b' || e.key === 'B') {
+                e.preventDefault();
                 toggleBookmarks();
             } else if (e.key === 'Escape' && isFullscreen) {
                 exitFullscreen();
+            }
+            // Arrow keys - update tracking
+            else if (e.key === 'ArrowRight' || e.key === 'PageDown') {
+                setTimeout(() => {
+                    currentPage++;
+                    updateProgress(currentPage);
+                }, 500);
+            } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+                setTimeout(() => {
+                    if (currentPage > 1) {
+                        currentPage--;
+                        updateProgress(currentPage);
+                    }
+                }, 500);
+            }
+        });
+
+        // Track clicks on the iframe (page changes)
+        setInterval(() => {
+            try {
+                const iframe = document.getElementById('pdfViewer');
+                if (iframe) {
+                    iframe.contentWindow.postMessage('getPage', '*');
+                }
+            } catch (e) {
+                // Ignore cross-origin errors
+            }
+        }, 3000);
+
+        // Listen for messages from PDF viewer
+        window.addEventListener('message', function(event) {
+            if (event.data && typeof event.data === 'object') {
+                if (event.data.pageNum) {
+                    const newPage = parseInt(event.data.pageNum);
+                    if (newPage !== currentPage && newPage > 0) {
+                        currentPage = newPage;
+                        updateProgress(currentPage);
+                    }
+                }
             }
         });
 
