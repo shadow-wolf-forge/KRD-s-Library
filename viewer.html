@@ -714,4 +714,84 @@
             }
         });
 
-        //
+        // Bookmarks functionality
+        function toggleBookmarks() {
+            bookmarksOpen = !bookmarksOpen;
+            document.getElementById('bookmarksPanel').classList.toggle('open', bookmarksOpen);
+            loadBookmarks();
+        }
+
+        function getBookmarkKey() {
+            return `bookmarks_${bookName}`;
+        }
+
+        function loadBookmarks() {
+            const bookmarks = JSON.parse(localStorage.getItem(getBookmarkKey()) || '[]');
+            const container = document.getElementById('bookmarksContent');
+            
+            if (bookmarks.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-bookmarks">
+                        <div class="empty-bookmarks-icon">🔖</div>
+                        <p>No bookmarks yet<br>Add one to get started!</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            container.innerHTML = bookmarks.map((bookmark, index) => `
+                <div class="bookmark-item" onclick="goToBookmark('${bookmark.cfi}')">
+                    <button class="bookmark-delete" onclick="event.stopPropagation(); deleteBookmark(${index})">
+                        🗑️
+                    </button>
+                    <div class="bookmark-location">📄 ${bookmark.location || 'Saved Location'}</div>
+                    <div class="bookmark-note">${bookmark.note || 'No note'}</div>
+                    <div class="bookmark-date">${new Date(bookmark.date).toLocaleString()}</div>
+                </div>
+            `).join('');
+        }
+
+        function addBookmark() {
+            if (!currentLocation) return;
+            
+            const note = document.getElementById('bookmarkNote').value.trim();
+            const bookmarks = JSON.parse(localStorage.getItem(getBookmarkKey()) || '[]');
+            
+            const newBookmark = {
+                cfi: currentLocation,
+                note: note || 'Bookmark',
+                location: `Progress: ${Math.round(rendition.location.start.percentage * 100)}%`,
+                date: new Date().toISOString()
+            };
+            
+            bookmarks.push(newBookmark);
+            localStorage.setItem(getBookmarkKey(), JSON.stringify(bookmarks));
+            
+            document.getElementById('bookmarkNote').value = '';
+            loadBookmarks();
+            
+            const btn = document.querySelector('.add-bookmark-btn');
+            const originalHTML = btn.innerHTML;
+            btn.innerHTML = '✓ Bookmark Added!';
+            setTimeout(() => {
+                btn.innerHTML = originalHTML;
+            }, 1500);
+        }
+
+        function deleteBookmark(index) {
+            const bookmarks = JSON.parse(localStorage.getItem(getBookmarkKey()) || '[]');
+            bookmarks.splice(index, 1);
+            localStorage.setItem(getBookmarkKey(), JSON.stringify(bookmarks));
+            loadBookmarks();
+        }
+
+        function goToBookmark(cfi) {
+            rendition.display(cfi);
+        }
+
+        window.addEventListener('beforeunload', saveProgress);
+
+        initReader();
+    </script>
+</body>
+</html>
