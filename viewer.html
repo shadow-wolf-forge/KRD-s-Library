@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Viewer - KRD's Library</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #2c3e50;
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .back-btn {
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 0.95rem;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+        }
+
+        .back-btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: translateY(-2px);
+        }
+
+        .book-info {
+            flex: 1;
+            text-align: center;
+            font-size: 1.1rem;
+            font-weight: 600;
+            padding: 0 10px;
+            min-width: 200px;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .page-info {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 8px 15px;
+            border-radius: 15px;
+            font-size: 0.9rem;
+            backdrop-filter: blur(10px);
+        }
+
+        .viewer-container {
+            height: calc(100vh - 70px);
+            width: 100%;
+            background: #34495e;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: auto;
+        }
+
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+
+        .loading {
+            color: white;
+            font-size: 1.5rem;
+            text-align: center;
+        }
+
+        @media (max-width: 768px) {
+            .header {
+                padding: 12px 15px;
+            }
+
+            .book-info {
+                font-size: 0.95rem;
+                order: 3;
+                width: 100%;
+                text-align: center;
+            }
+
+            .back-btn {
+                padding: 8px 15px;
+                font-size: 0.85rem;
+            }
+
+            .page-info {
+                padding: 6px 12px;
+                font-size: 0.8rem;
+            }
+
+            .viewer-container {
+                height: calc(100vh - 100px);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <button class="back-btn" onclick="goBack()">← Back to Library</button>
+        <div class="book-info" id="bookName">Loading...</div>
+        <div class="controls">
+            <div class="page-info" id="pageInfo">Page 1</div>
+        </div>
+    </div>
+
+    <div class="viewer-container">
+        <div class="loading">Loading PDF...</div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const pdfUrl = decodeURIComponent(urlParams.get('pdf'));
+        const bookName = decodeURIComponent(urlParams.get('name'));
+        
+        document.getElementById('bookName').textContent = bookName.replace('.pdf', '');
+
+        function goBack() {
+            window.location.href = 'index.html';
+        }
+
+        // Load PDF with progress tracking
+        async function loadPDF() {
+            const container = document.querySelector('.viewer-container');
+            
+            try {
+                // Get saved page number
+                const savedProgress = localStorage.getItem(`book_${bookName}`);
+                let savedPage = 1;
+                
+                if (savedProgress) {
+                    const progress = JSON.parse(savedProgress);
+                    savedPage = progress.page || 1;
+                }
+
+                // Use PDF.js viewer
+                const viewerUrl = `https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodeURIComponent(pdfUrl)}#page=${savedPage}`;
+                
+                container.innerHTML = `<iframe src="${viewerUrl}" id="pdfFrame"></iframe>`;
+                
+                // Track page changes
+                const iframe = document.getElementById('pdfFrame');
+                
+                iframe.onload = function() {
+                    try {
+                        // Monitor hash changes for page tracking
+                        window.addEventListener('message', function(event) {
+                            if (event.data && event.data.type === 'pageChange') {
+                                updateProgress(event.data.page);
+                            }
+                        });
+
+                        // Alternative: Check iframe URL periodically
+                        setInterval(() => {
+                            try {
+                                const iframeWindow = iframe.contentWindow;
+                                if (iframeWindow && iframeWindow.location) {
+                                    const hash = iframeWindow.location.hash;
+                                    const match = hash.match(/page=(\d+)/);
+                                    if (match) {
+                                        const currentPage = parseInt(match[1]);
+                                        updateProgress(currentPage);
+                                    }
+                                }
+                            } catch (e) {
+                                // Cross-origin restriction, use fallback
+                            }
+                        }, 2000);
+
+                    } catch (e) {
+                        console.log('Unable to track page changes due to cross-origin restrictions');
+                    }
+                };
+
+            } catch (error) {
+                console.error('Error loading PDF:', error);
+                container.innerHTML = `
+                    <div class="loading" style="color: #e74c3c;">
+                        ⚠️ Error loading PDF<br>
+                        <small>${error.message}</small>
+                    </div>
+                `;
+            }
+        }
+
+        function updateProgress(currentPage) {
+            // Save progress
+            const progress = {
+                page: currentPage,
+                total: 0, // PDF.js viewer doesn't easily expose total pages
+                percentage: 0,
+                lastRead: new Date().toISOString()
+            };
+            
+            localStorage.setItem(`book_${bookName}`, JSON.stringify(progress));
+            document.getElementById('pageInfo').textContent = `Page ${currentPage}`;
+        }
+
+        // Save current page before leaving
+        window.addEventListener('beforeunload', () => {
+            try {
+                const iframe = document.getElementById('pdfFrame');
+                if (iframe && iframe.contentWindow) {
+                    const hash = iframe.contentWindow.location.hash;
+                    const match = hash.match(/page=(\d+)/);
+                    if (match) {
+                        updateProgress(parseInt(match[1]));
+                    }
+                }
+            } catch (e) {
+                // Cross-origin restriction
+            }
+        });
+
+        loadPDF();
+    </script>
+</body>
+</html>
