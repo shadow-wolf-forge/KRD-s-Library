@@ -669,6 +669,15 @@
             const progress = getReadingProgress(book.name);
             const hasProgress = progress.page > 0;
             
+            // Calculate actual percentage if we have total pages
+            let displayPercentage = 0;
+            if (hasProgress && progress.total > 0) {
+                displayPercentage = Math.round((progress.page / progress.total) * 100);
+            } else if (hasProgress) {
+                // If we don't have total pages, show a minimum progress
+                displayPercentage = Math.min(progress.percentage || 5, 95);
+            }
+            
             card.innerHTML = `
                 <div class="book-header">
                     <div class="book-icon">📖</div>
@@ -684,12 +693,12 @@
                     <div class="progress-section">
                         <div class="progress-info">
                             <span class="progress-label">Reading Progress</span>
-                            <span class="progress-percentage">${Math.round(progress.percentage)}%</span>
+                            <span class="progress-percentage">${displayPercentage}%</span>
                         </div>
                         <div class="progress-bar">
-                            <div class="progress-fill" style="width: ${progress.percentage}%"></div>
+                            <div class="progress-fill" style="width: ${displayPercentage}%"></div>
                         </div>
-                        <div class="last-read">Last read: ${formatDate(progress.lastRead)}</div>
+                        <div class="last-read">Page ${progress.page}${progress.total > 0 ? ' of ' + progress.total : ''} • Last read: ${formatDate(progress.lastRead)}</div>
                     </div>
                 ` : ''}
             `;
@@ -701,7 +710,11 @@
         function getReadingProgress(fileName) {
             const stored = localStorage.getItem(`book_${fileName}`);
             if (stored) {
-                return JSON.parse(stored);
+                try {
+                    return JSON.parse(stored);
+                } catch (e) {
+                    return { page: 0, total: 0, percentage: 0, lastRead: null };
+                }
             }
             return { page: 0, total: 0, percentage: 0, lastRead: null };
         }
@@ -759,6 +772,9 @@
                 displayBooks(filteredBooks);
             }
         });
+
+        // Auto-refresh stats every 30 seconds to catch external updates
+        setInterval(updateStats, 30000);
 
         // Load books on page load
         window.onload = loadBooks;
