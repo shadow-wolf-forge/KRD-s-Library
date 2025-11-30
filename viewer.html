@@ -3,10 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PDF Viewer - KRD's Library</title>
+    <title>EPUB Reader - KRD's Library</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/epubjs/dist/epub.min.js"></script>
     <style>
         :root {
             --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -91,10 +92,6 @@
             box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
         }
 
-        .btn:active {
-            transform: translateY(0);
-        }
-
         .btn-primary {
             background: var(--primary-gradient);
             color: white;
@@ -120,7 +117,7 @@
             gap: 10px;
         }
 
-        .page-indicator {
+        .progress-indicator {
             background: rgba(102, 126, 234, 0.1);
             padding: 8px 16px;
             border-radius: 10px;
@@ -188,7 +185,7 @@
             transform: translateX(-5px);
         }
 
-        .bookmark-page {
+        .bookmark-location {
             font-size: 0.85rem;
             color: #667eea;
             font-weight: 600;
@@ -287,20 +284,22 @@
         .viewer-container {
             height: calc(100vh - 75px);
             width: 100%;
-            background: #2d3748;
+            background: #ffffff;
             position: relative;
             transition: var(--transition);
+            display: flex;
+            justify-content: center;
+            align-items: center;
         }
 
         body.fullscreen .viewer-container {
             height: 100vh;
         }
 
-        #pdfViewer {
-            width: 100%;
-            height: 100%;
-            border: none;
-            display: block;
+        #viewer {
+            width: 90%;
+            max-width: 800px;
+            height: 90%;
         }
 
         .loading {
@@ -309,14 +308,14 @@
             left: 50%;
             transform: translate(-50%, -50%);
             text-align: center;
-            color: white;
+            color: #667eea;
         }
 
         .loading-spinner {
             width: 60px;
             height: 60px;
             margin: 0 auto 20px;
-            border: 4px solid rgba(255, 255, 255, 0.1);
+            border: 4px solid rgba(102, 126, 234, 0.1);
             border-top-color: #667eea;
             border-radius: 50%;
             animation: spin 1s linear infinite;
@@ -331,7 +330,47 @@
             font-weight: 500;
         }
 
-        /* Fullscreen Controls Overlay */
+        /* Navigation Controls */
+        .nav-controls {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255, 255, 255, 0.95);
+            padding: 15px 25px;
+            border-radius: 50px;
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+            z-index: 100;
+        }
+
+        .nav-btn {
+            background: none;
+            border: none;
+            color: var(--text-primary);
+            cursor: pointer;
+            font-size: 1.3rem;
+            padding: 8px 12px;
+            border-radius: 50%;
+            transition: var(--transition);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .nav-btn:hover {
+            background: rgba(102, 126, 234, 0.1);
+            color: #667eea;
+        }
+
+        .nav-btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
+        /* Fullscreen Controls */
         .fullscreen-controls {
             position: fixed;
             bottom: 30px;
@@ -377,7 +416,6 @@
             color: #667eea;
         }
 
-        /* Responsive Design */
         @media (max-width: 768px) {
             .header {
                 padding: 12px 15px;
@@ -399,25 +437,21 @@
                 right: -100%;
             }
 
-            .viewer-container {
-                height: calc(100vh - 120px);
+            #viewer {
+                width: 95%;
             }
 
-            body.fullscreen .viewer-container {
-                height: 100vh;
-            }
-
-            .fullscreen-controls {
+            .nav-controls {
                 bottom: 20px;
                 padding: 12px 20px;
             }
 
-            .fs-control-btn {
+            .nav-btn {
                 font-size: 1.1rem;
+                padding: 6px 10px;
             }
         }
 
-        /* Scrollbar Styling */
         .bookmarks-content::-webkit-scrollbar {
             width: 8px;
         }
@@ -429,10 +463,6 @@
         .bookmarks-content::-webkit-scrollbar-thumb {
             background: #667eea;
             border-radius: 4px;
-        }
-
-        .bookmarks-content::-webkit-scrollbar-thumb:hover {
-            background: #764ba2;
         }
     </style>
 </head>
@@ -449,12 +479,12 @@
         <div class="book-title" id="bookTitle">Loading...</div>
         
         <div class="header-right">
-            <div class="page-indicator" id="pageIndicator">Page 1</div>
-            <button class="btn" id="bookmarkBtn" onclick="toggleBookmarks()">
+            <div class="progress-indicator" id="progressIndicator">0%</div>
+            <button class="btn" onclick="toggleBookmarks()">
                 <span>🔖</span>
                 <span>Bookmarks</span>
             </button>
-            <button class="btn btn-primary" id="fullscreenBtn" onclick="toggleFullscreen()">
+            <button class="btn btn-primary" onclick="toggleFullscreen()">
                 <span id="fullscreenIcon">⛶</span>
                 <span id="fullscreenText">Fullscreen</span>
             </button>
@@ -465,7 +495,7 @@
     <div class="bookmarks-panel" id="bookmarksPanel">
         <div class="bookmarks-header">
             <h3>📑 Bookmarks</h3>
-            <p>Quick access to your marked pages</p>
+            <p>Quick access to your marked locations</p>
         </div>
         
         <div class="bookmarks-content" id="bookmarksContent">
@@ -478,7 +508,7 @@
         <div class="add-bookmark-section">
             <input type="text" class="add-bookmark-input" id="bookmarkNote" placeholder="Add a note (optional)...">
             <button class="add-bookmark-btn" onclick="addBookmark()">
-                ➕ Add Bookmark (Current Page: <span id="currentPageForBookmark">1</span>)
+                ➕ Add Bookmark at Current Location
             </button>
         </div>
     </div>
@@ -486,35 +516,132 @@
     <!-- Fullscreen Controls -->
     <div class="fullscreen-controls" id="fullscreenControls">
         <button class="fs-control-btn" onclick="goBack()" title="Back to Library">🏠</button>
+        <button class="fs-control-btn" onclick="rendition.prev()" title="Previous">←</button>
+        <button class="fs-control-btn" onclick="rendition.next()" title="Next">→</button>
         <button class="fs-control-btn" onclick="toggleBookmarks()" title="Bookmarks">🔖</button>
         <button class="fs-control-btn" onclick="toggleFullscreen()" title="Exit Fullscreen">✕</button>
     </div>
 
     <!-- Viewer Container -->
-    <div class="viewer-container" id="viewerContainer">
+    <div class="viewer-container">
         <div class="loading">
             <div class="loading-spinner"></div>
-            <div class="loading-text">Loading PDF...</div>
+            <div class="loading-text">Loading book...</div>
+        </div>
+        <div id="viewer"></div>
+        
+        <div class="nav-controls">
+            <button class="nav-btn" id="prevBtn" onclick="rendition.prev()">←</button>
+            <button class="nav-btn" id="nextBtn" onclick="rendition.next()">→</button>
         </div>
     </div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script>
         const urlParams = new URLSearchParams(window.location.search);
-        const pdfUrl = decodeURIComponent(urlParams.get('pdf'));
+        const epubUrl = decodeURIComponent(urlParams.get('epub'));
         const bookName = decodeURIComponent(urlParams.get('name'));
         
-        let currentPage = 1;
-        let totalPages = 0;
+        let book;
+        let rendition;
+        let currentLocation;
         let isFullscreen = false;
         let bookmarksOpen = false;
         let controlsTimeout;
-        let pageCheckInterval;
 
-        document.getElementById('bookTitle').textContent = bookName.replace('.pdf', '');
+        document.getElementById('bookTitle').textContent = bookName.replace('.epub', '');
 
         function goBack() {
+            saveProgress();
             window.location.href = 'index.html';
+        }
+
+        // Initialize EPUB Reader
+        async function initReader() {
+            try {
+                book = ePub(epubUrl);
+                rendition = book.renderTo("viewer", {
+                    width: "100%",
+                    height: "100%",
+                    spread: "none"
+                });
+
+                // Load saved location
+                const savedProgress = getSavedProgress();
+                if (savedProgress && savedProgress.cfi) {
+                    await rendition.display(savedProgress.cfi);
+                } else {
+                    await rendition.display();
+                }
+
+                // Hide loading
+                document.querySelector('.loading').style.display = 'none';
+
+                // Track location changes
+                rendition.on("relocated", (location) => {
+                    currentLocation = location.start.cfi;
+                    updateProgress(location.start.percentage);
+                    saveProgress();
+                });
+
+                // Keyboard navigation
+                document.addEventListener('keydown', handleKeyPress);
+
+                // Get book metadata
+                book.loaded.metadata.then((metadata) => {
+                    if (metadata.title) {
+                        document.getElementById('bookTitle').textContent = metadata.title;
+                    }
+                });
+
+            } catch (error) {
+                console.error('Error loading book:', error);
+                document.querySelector('.loading-text').textContent = 'Error loading book: ' + error.message;
+            }
+        }
+
+        function handleKeyPress(e) {
+            if (e.key === 'ArrowRight') {
+                rendition.next();
+            } else if (e.key === 'ArrowLeft') {
+                rendition.prev();
+            } else if (e.key === 'f' || e.key === 'F') {
+                e.preventDefault();
+                toggleFullscreen();
+            } else if (e.key === 'b' || e.key === 'B') {
+                e.preventDefault();
+                toggleBookmarks();
+            } else if (e.key === 'Escape' && isFullscreen) {
+                exitFullscreen();
+            }
+        }
+
+        function updateProgress(percentage) {
+            const percent = Math.round(percentage * 100);
+            document.getElementById('progressIndicator').textContent = `${percent}%`;
+        }
+
+        function getSavedProgress() {
+            const stored = localStorage.getItem(`book_${bookName}`);
+            if (stored) {
+                try {
+                    return JSON.parse(stored);
+                } catch (e) {
+                    return null;
+                }
+            }
+            return null;
+        }
+
+        function saveProgress() {
+            if (!currentLocation) return;
+            
+            const progress = {
+                cfi: currentLocation,
+                percentage: Math.round(rendition.location.start.percentage * 100),
+                lastRead: new Date().toISOString()
+            };
+            
+            localStorage.setItem(`book_${bookName}`, JSON.stringify(progress));
         }
 
         // Fullscreen functionality
@@ -528,7 +655,6 @@
 
         function enterFullscreen() {
             const elem = document.documentElement;
-            
             if (elem.requestFullscreen) {
                 elem.requestFullscreen();
             } else if (elem.webkitRequestFullscreen) {
@@ -548,14 +674,12 @@
             }
         }
 
-        // Listen for fullscreen changes
         document.addEventListener('fullscreenchange', handleFullscreenChange);
         document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
         document.addEventListener('msfullscreenchange', handleFullscreenChange);
 
         function handleFullscreenChange() {
             isFullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement);
-            
             document.body.classList.toggle('fullscreen', isFullscreen);
             
             if (isFullscreen) {
@@ -568,7 +692,6 @@
             }
         }
 
-        // Show fullscreen controls on mouse move
         function showFullscreenControls() {
             const controls = document.getElementById('fullscreenControls');
             const header = document.querySelector('.header');
@@ -591,252 +714,4 @@
             }
         });
 
-        // Bookmarks functionality
-        function toggleBookmarks() {
-            bookmarksOpen = !bookmarksOpen;
-            document.getElementById('bookmarksPanel').classList.toggle('open', bookmarksOpen);
-            loadBookmarks();
-        }
-
-        function getBookmarkKey() {
-            return `bookmarks_${bookName}`;
-        }
-
-        function loadBookmarks() {
-            const bookmarks = JSON.parse(localStorage.getItem(getBookmarkKey()) || '[]');
-            const container = document.getElementById('bookmarksContent');
-            
-            if (bookmarks.length === 0) {
-                container.innerHTML = `
-                    <div class="empty-bookmarks">
-                        <div class="empty-bookmarks-icon">🔖</div>
-                        <p>No bookmarks yet<br>Add one to get started!</p>
-                    </div>
-                `;
-                return;
-            }
-            
-            container.innerHTML = bookmarks.map((bookmark, index) => `
-                <div class="bookmark-item" onclick="goToBookmark(${bookmark.page})">
-                    <button class="bookmark-delete" onclick="event.stopPropagation(); deleteBookmark(${index})">
-                        🗑️
-                    </button>
-                    <div class="bookmark-page">📄 Page ${bookmark.page}</div>
-                    <div class="bookmark-note">${bookmark.note || 'No note'}</div>
-                    <div class="bookmark-date">${new Date(bookmark.date).toLocaleString()}</div>
-                </div>
-            `).join('');
-        }
-
-        function addBookmark() {
-            const note = document.getElementById('bookmarkNote').value.trim();
-            const bookmarks = JSON.parse(localStorage.getItem(getBookmarkKey()) || '[]');
-            
-            // Check if bookmark already exists for this page
-            const existingIndex = bookmarks.findIndex(b => b.page === currentPage);
-            
-            const newBookmark = {
-                page: currentPage,
-                note: note || `Page ${currentPage}`,
-                date: new Date().toISOString()
-            };
-            
-            if (existingIndex !== -1) {
-                bookmarks[existingIndex] = newBookmark;
-            } else {
-                bookmarks.push(newBookmark);
-            }
-            
-            // Sort by page number
-            bookmarks.sort((a, b) => a.page - b.page);
-            
-            localStorage.setItem(getBookmarkKey(), JSON.stringify(bookmarks));
-            document.getElementById('bookmarkNote').value = '';
-            loadBookmarks();
-            
-            // Show feedback
-            const btn = document.querySelector('.add-bookmark-btn');
-            const originalHTML = btn.innerHTML;
-            btn.innerHTML = '✓ Bookmark Added!';
-            setTimeout(() => {
-                btn.innerHTML = originalHTML;
-            }, 1500);
-        }
-
-        function deleteBookmark(index) {
-            const bookmarks = JSON.parse(localStorage.getItem(getBookmarkKey()) || '[]');
-            bookmarks.splice(index, 1);
-            localStorage.setItem(getBookmarkKey(), JSON.stringify(bookmarks));
-            loadBookmarks();
-        }
-
-        function goToBookmark(page) {
-            const url = `https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodeURIComponent(pdfUrl)}#page=${page}`;
-            document.getElementById('pdfViewer').src = url;
-            currentPage = page;
-            updateProgress(page);
-        }
-
-        // Load PDF
-        async function loadPDF() {
-            const container = document.getElementById('viewerContainer');
-            
-            try {
-                const savedProgress = localStorage.getItem(`book_${bookName}`);
-                let savedPage = 1;
-                
-                if (savedProgress) {
-                    const progress = JSON.parse(savedProgress);
-                    savedPage = progress.page || 1;
-                    totalPages = progress.total || 0;
-                }
-                
-                currentPage = savedPage;
-                updatePageDisplay();
-
-                const viewerUrl = `https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodeURIComponent(pdfUrl)}#page=${savedPage}`;
-                
-                container.innerHTML = `<iframe src="${viewerUrl}" id="pdfViewer"></iframe>`;
-                
-                // Start checking for page changes
-                startPageTracking();
-
-            } catch (error) {
-                console.error('Error loading PDF:', error);
-                container.innerHTML = `
-                    <div class="loading">
-                        <div style="font-size: 4rem; margin-bottom: 20px;">⚠️</div>
-                        <div class="loading-text">Error loading PDF</div>
-                        <div style="margin-top: 10px; font-size: 0.9rem; opacity: 0.7;">${error.message}</div>
-                    </div>
-                `;
-            }
-        }
-
-        function startPageTracking() {
-            // Clear any existing interval
-            if (pageCheckInterval) {
-                clearInterval(pageCheckInterval);
-            }
-
-            // Check page changes every 2 seconds
-            pageCheckInterval = setInterval(() => {
-                try {
-                    const iframe = document.getElementById('pdfViewer');
-                    if (iframe && iframe.contentWindow) {
-                        const iframeLocation = iframe.contentWindow.location.href;
-                        const pageMatch = iframeLocation.match(/[#&]page=(\d+)/);
-                        
-                        if (pageMatch) {
-                            const newPage = parseInt(pageMatch[1]);
-                            if (newPage !== currentPage && newPage > 0) {
-                                currentPage = newPage;
-                                updateProgress(currentPage);
-                            }
-                        }
-                    }
-                } catch (e) {
-                    // Cross-origin restriction - fallback method
-                    // We'll rely on manual tracking via hash changes
-                }
-            }, 2000);
-
-            // Alternative: Listen for hash changes
-            window.addEventListener('hashchange', function() {
-                const pageMatch = window.location.hash.match(/page=(\d+)/);
-                if (pageMatch) {
-                    currentPage = parseInt(pageMatch[1]);
-                    updateProgress(currentPage);
-                }
-            });
-        }
-
-        function updateProgress(page) {
-            // Get total pages from PDF.js if possible
-            if (totalPages === 0) {
-                // Estimate or set a reasonable number
-                totalPages = page; // Will grow as user navigates
-            } else if (page > totalPages) {
-                totalPages = page;
-            }
-
-            const percentage = totalPages > 0 ? Math.round((page / totalPages) * 100) : 0;
-            
-            const progress = {
-                page: page,
-                total: totalPages,
-                percentage: percentage,
-                lastRead: new Date().toISOString()
-            };
-            
-            localStorage.setItem(`book_${bookName}`, JSON.stringify(progress));
-            updatePageDisplay();
-        }
-
-        function updatePageDisplay() {
-            const pageText = totalPages > 0 ? `Page ${currentPage} of ${totalPages}` : `Page ${currentPage}`;
-            document.getElementById('pageIndicator').textContent = pageText;
-            document.getElementById('currentPageForBookmark').textContent = currentPage;
-        }
-
-        // Save progress before leaving
-        window.addEventListener('beforeunload', () => {
-            updateProgress(currentPage);
-        });
-
-        // Manual page tracking - User can press keys to update
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'f' || e.key === 'F') {
-                e.preventDefault();
-                toggleFullscreen();
-            } else if (e.key === 'b' || e.key === 'B') {
-                e.preventDefault();
-                toggleBookmarks();
-            } else if (e.key === 'Escape' && isFullscreen) {
-                exitFullscreen();
-            }
-            // Arrow keys - update tracking
-            else if (e.key === 'ArrowRight' || e.key === 'PageDown') {
-                setTimeout(() => {
-                    currentPage++;
-                    updateProgress(currentPage);
-                }, 500);
-            } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
-                setTimeout(() => {
-                    if (currentPage > 1) {
-                        currentPage--;
-                        updateProgress(currentPage);
-                    }
-                }, 500);
-            }
-        });
-
-        // Track clicks on the iframe (page changes)
-        setInterval(() => {
-            try {
-                const iframe = document.getElementById('pdfViewer');
-                if (iframe) {
-                    iframe.contentWindow.postMessage('getPage', '*');
-                }
-            } catch (e) {
-                // Ignore cross-origin errors
-            }
-        }, 3000);
-
-        // Listen for messages from PDF viewer
-        window.addEventListener('message', function(event) {
-            if (event.data && typeof event.data === 'object') {
-                if (event.data.pageNum) {
-                    const newPage = parseInt(event.data.pageNum);
-                    if (newPage !== currentPage && newPage > 0) {
-                        currentPage = newPage;
-                        updateProgress(currentPage);
-                    }
-                }
-            }
-        });
-
-        loadPDF();
-    </script>
-</body>
-</html>
+        //
